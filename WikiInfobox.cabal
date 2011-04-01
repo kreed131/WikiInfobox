@@ -1,0 +1,22 @@
+Name:                WikiInfobox
+Version:             1.0
+Synopsis:            Library for parsing Infoboxes from Wikipedia
+Description:         Simple library for parsing InfoBoxes from Wikipedia and finding wikipedia url's
+License:             BSD3
+Author:              Alexey G
+Maintainer:          kreed131@gmail.com
+Stability:           Experimental
+Category:            Web
+Build-type:          Simple
+Cabal-version:       >=1.2
+
+Library
+  Build-depends:
+    base     >= 4.0,
+    tagsoup  >= 0.12,
+    MissingH >= 1.1.0.0,
+    HTTP     >= 4000.1.0,
+    json     >= 0.4.3
+  Exposed-modules:
+    WikiInfobox,
+    WikiInfobox.Render
