@@ -140,26 +140,9 @@ delEmptyEntries = filter (not . anyNullAL)
 anyNullAL :: ([a], [b]) -> Bool
 anyNullAL al    = null (fst al) || null (snd al)
 
-test = do
-  src <- getUrl "http://en.wikipedia.org/w/index.php?title=Albania&action=edit"
-  return  $ parseData $ select $ parseTags src
-test1 = do
-  src <- getUrl "http://en.wikipedia.org/w/index.php?title=United_States&action=edit"
-  return  $ select $ parseTags src
-
-test3 x = do
-  s <- (fmap getInfo . getWiki "en") "Belarus"
-  return s
-
-test2 x = do
-  url <- getWikiUrl "" x
-  src <- getUrl $ getWikiEditUrl url
-  return $ (parseData . select . parseTags) src
-  
-
 --- Bing API
 
-bingAppId = "D356832030978843E16A93423258B2158ED5B43F"
+bingAppId = "app_id"
 
 getWikiEditUrl :: String -> String
 getWikiEditUrl []   = []
