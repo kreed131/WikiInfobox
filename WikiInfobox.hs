@@ -23,13 +23,14 @@ import Text.HTML.TagSoup
 import Data.List
 import Data.List.Utils
 import Data.Maybe
+import Control.Applicative
 
 type InfoboxData = [(Key, Value)]
 type Key         = String
 type Value       = String
-
+getUrl :: String -> IO String
 getUrl ""   = return []
-getUrl url  = (simpleHTTP $ getRequest url) >>= getResponseBody
+getUrl url  = simpleHTTP (getRequest url) >>= getResponseBody
 
 getInfo :: String -> InfoboxData
 getInfo ""  = [("api_status", "no_matches")]
@@ -37,29 +38,34 @@ getInfo x   = (parseData . select . parseTags) x
 
 getWiki :: String -> String -> IO String
 getWiki _   "" = return []
-getWiki lang q = (fmap getWikiEditUrl $ getWikiUrl lang q) >>= getUrl
+getWiki lang q = getWikiEditUrl <$> getWikiUrl lang q >>= getUrl
 
+clean, cleverClean, addWs :: String -> String
 clean       = unwords . words
 cleverClean = cleverUnwords . words
-cleanMap    = map clean
-cleanData   = map (clean . tail)
 addWs       = (:) ' ' . (++ " ")
 
-removeEmpty = concatMap (\x -> if null x then [] else [x])
-cutInfo     = takeWhile (/= "}}") . dropWhile (not . startswith "{{Infobox")
-isWikiTag x = or $ map (\y -> startswith y x || endswith y x) wikiTags
 
+cleanData, cutInfo, cleanMap, removeEmpty :: [String] -> [String]
+cleanData   = map (clean . tail)
+cleanMap    = map clean
+cutInfo     = takeWhile (/= "}}") . dropWhile (not . startswith "{{Infobox")
+removeEmpty = concatMap (\x -> if null x then [] else [x])
+
+isWikiTag :: String -> Bool
+isWikiTag x = any (\y -> startswith y x || endswith y x) wikiTags
+
+punctMarks, wikiTags :: [String]
 punctMarks  = [",", ".", "!", "?", ":", ";"]
 wikiTags    = ["[[", "]]", "{{", "}}"]
 
 cleverUnwords :: [String] -> String
 cleverUnwords = clean . concatMap (\s -> if isPunct s then s else ' ':s)
     where 
-      isPunct x = or $ map (\p -> startswith p x) punctMarks
+      isPunct x = any (`startswith` x) punctMarks
       
 select :: [Tag String] -> [String]
-select s   = [ (drop 7 . fromTagText . (!!3) .  head . partitions (~== "<div class=printfooter>")) s]
-             ++ select' s
+select s   = (drop 7 . fromTagText . (!!3) .  head . partitions (~== "<div class=printfooter>")) s : select' s
 
 select' :: [Tag String] -> [String]
 select'     = cleanData . removeEmpty . cutInfo . lines . concatMap fromTagText 
@@ -67,7 +73,7 @@ select'     = cleanData . removeEmpty . cutInfo . lines . concatMap fromTagText
              . head . partitions (~== "<textarea name=wpTextbox1>")
 
 removeWikiTags :: String -> String
-removeWikiTags = cleverClean . cleverUnwords . (map fromWikiTag) . splitWikiTags
+removeWikiTags = cleverClean . cleverUnwords . map fromWikiTag . splitWikiTags
 
 sidesWith :: String -> String -> String -> Bool
 sidesWith l r s = startswith l s && endswith r s
@@ -84,7 +90,7 @@ splitWikiTags :: String -> [String]
 splitWikiTags src =  mergeSequences $ findSequences zips
     where 
       xs          = (words . indentMap) src 
-      zips        = zip (map (\x -> isWikiTag x) xs) xs
+      zips        = zip (map isWikiTag xs) xs
       
 indentMap :: String -> String
 indentMap s  = indentMap' s 0
@@ -94,10 +100,10 @@ indentMap s  = indentMap' s 0
       indentTag' n    = indentTag (wikiTags !! n)
 
 indentTag :: String -> String -> String
-indentTag t  = join (addWs t). (split t) 
+indentTag t  = join (addWs t) . split t 
 
 mergeSequences :: (Eq a) => [(a, String)] -> [String]
-mergeSequences    = map (unwords) . map (\x -> map(\y -> snd y) x) . groupBy (\x y -> fst x == fst y)
+mergeSequences    = map (unwords . map snd) . groupBy (\x y -> fst x == fst y)
 
 findSequences :: [(Bool, String)] -> [(Int, String)]
 findSequences lst = findSeq' lst False 0
@@ -111,9 +117,9 @@ findSequences lst = findSeq' lst False 0
             (False, False) -> (-1, snd x) : findSeq' xs b n
 
 parseData ::  [String] -> InfoboxData
-parseData (x:xs) = prefix ++ (delEmptyEntries . map (parseData')) xs
+parseData (x:xs) = prefix ++ (delEmptyEntries . map parseData') xs
     where 
-      prefix       = ("api_status", status) : ("wiki_url", x) : ("wiki_lang", lang) : []
+      prefix       = [("api_status", status), ("wiki_url", x), ("wiki_lang", lang)]
       status       = case null xs of
                        True  -> if null x then "no_matches" else "no_infobox"
                        False -> "ok"
@@ -123,14 +129,13 @@ parseData (x:xs) = prefix ++ (delEmptyEntries . map (parseData')) xs
       key        y = join "_" . split " " $ if length (splitKey y) < 1 then "" else  last $ splitKey y
       splitKey     = split "|" . (!!0) . prepared 
       prepared     = map removeWikiTags . splitted
-      splitByEq    = split "="
-      splitted   y = if elem '=' y then splitByEq y
-                    else if startswith "{Infobox" y
-                         then ["type", last $ split " " y]
-                         else ["", ""] 
+      splitted y
+        | '=' `elem` y            = split "=" y
+        | startswith "{Infobox" y = ["wiki_type", last $ split " " y]
+        | otherwise               = ["", ""]                                    
 
 delEmptyEntries :: InfoboxData -> InfoboxData
-delEmptyEntries = filter (\x -> not $ anyNullAL x)
+delEmptyEntries = filter (not . anyNullAL)
 
 anyNullAL :: ([a], [b]) -> Bool
 anyNullAL al    = null (fst al) || null (snd al)
@@ -154,7 +159,7 @@ test2 x = do
 
 --- Bing API
 
-bingAppId = "enter your Bing APP ID here"
+bingAppId = "D356832030978843E16A93423258B2158ED5B43F"
 
 getWikiEditUrl :: String -> String
 getWikiEditUrl []   = []
@@ -166,13 +171,14 @@ getWikiUrl lang query   = do
   searchResults <- getUrl $ apiUrl lang query
   return $ getResult searchResults
       where 
-        getResult x = if not (null $ result x) && (checkResult x) then (parseResult x) else ""
+        getResult x = if not (null $ result x) && checkResult x then parseResult x else ""
         result      = partitions (~== "<web:Url>") . parseTags
         parseResult = fromTagText . (!!1) . head . result
         checkResult = startswith ("http://" ++ lang ++ ".wikipedia.org") . parseResult
 
-apiUrl lang query = 
-                    concat ["http://api.search.live.net/xml.aspx?Appid="
+apiUrl :: String -> String -> String
+apiUrl lang query = concat 
+                    ["http://api.search.live.net/xml.aspx?Appid="
                       , bingAppId, "&query='"
                       , lang'
                       , ".wikipedia.org'%20"
